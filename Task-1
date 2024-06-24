@@ -1,0 +1,401 @@
+#import library
+import numpy as np
+import pandas as pd
+import missingno
+from collections import Counter
+
+# Data Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as stats
+
+#Clustering
+from sklearn.cluster import KMeans
+from sklearn.cluster import AgglomerativeClustering
+import scipy.cluster.hierarchy as sch
+from sklearn.metrics import silhouette_score
+from sklearn.metrics import calinski_harabasz_score
+from tabulate import tabulate
+import warnings
+warnings.filterwarnings('ignore')
+
+ #Importing the datasets
+ dataset = pd.read_csv('/content/Mall_Customers.csv')
+
+#Looking at the sample records of the dataset
+dataset.head(10)
+
+# Shape of the dataset
+dataset.shape
+
+# Looking at the datatypes of the dataset
+dataset.info()
+
+# Changing the datatype of the column - Gender to category
+dataset.Pclass = dataset.Gender.astype('category')
+
+# Visual representation of the missing data in the dataset
+missingno.matrix(dataset)
+
+# Summary statistics of the numerical columns in the dataset
+dataset.describe()
+
+# Understanding the distribution of the numerical column
+
+def diagnostic_plots(df, variable):
+    plt.figure(figsize = (16, 4))
+
+    # Histogram
+    plt.subplot(1, 3, 1)
+    sns.histplot(df[variable], bins = 30)
+    plt.title('Histogram')
+
+    # Q-Q plot
+    plt.subplot(1, 3, 2)
+    stats.probplot(df[variable], dist = "norm", plot = plt)
+    plt.ylabel('Variable quantiles')
+
+    # Boxplot
+    plt.subplot(1, 3, 3)
+    sns.boxplot(y = df[variable])
+    plt.title('Boxplot')
+    plt.show()
+
+# Value counts of the column - Gender
+gender_count = dataset['Gender'].value_counts(dropna = False)
+gender_count
+
+# Bar graph showing the value counts of the column - Gender
+sns.barplot(x=gender_count.index, y=gender_count.values, alpha=0.8)  # Use named arguments 'x' and 'y'
+plt.title('Bar graph showing the value counts of the column - Gender')
+plt.ylabel('Number of Occurrences', fontsize=12)
+plt.xlabel('Gender', fontsize=12)
+plt.show()
+
+# Mean of Annual Income by Gender
+gender_income = dataset[['Gender', 'Annual Income (k$)']].groupby('Gender', as_index = False).mean()
+gender_income
+
+# Mean Annual Income by Gender
+sns.barplot(x=gender_income['Gender'], y=gender_income['Annual Income (k$)'], alpha = 0.8) # Pass x and y as named arguments
+plt.title('Annual Income by Gender')
+plt.ylabel('Mean Annual Income', fontsize = 12)
+plt.xlabel('Gender', fontsize = 12)
+plt.show()
+
+# Mean Spending Score by Gender
+gender_score = dataset[['Gender', 'Spending Score (1-100)']].groupby('Gender', as_index = False).mean()
+gender_score
+
+# Mean Spending Score by Gender
+sns.barplot(x=gender_score['Gender'], y=gender_score['Spending Score (1-100)'], alpha = 0.8) # Pass x and y as named arguments
+plt.title('Spending Score by Gender')
+plt.ylabel('Mean Spending Score', fontsize = 12)
+plt.xlabel('Gender', fontsize = 12)
+plt.show()
+
+# Mean Age by Gender
+gender_age = dataset[['Gender', 'Age']].groupby('Gender', as_index = False).mean()
+gender_age
+
+# Mean Age by Gender
+sns.barplot(x=gender_age['Gender'], y=gender_age['Age'], alpha = 0.8) # Pass x and y as named arguments
+plt.title('Mean Age by Gender')
+plt.ylabel('Mean Age of the customer', fontsize = 12)
+plt.xlabel('Gender', fontsize = 12)
+plt.show()
+
+# Understanding the distribution of the column - Age
+diagnostic_plots(dataset, 'Age')
+
+# Scatterplot between Age and Annual Income
+sns.scatterplot(data = dataset, x = "Age", y = "Annual Income (k$)", hue = "Gender")
+
+# Scatterplot between Age and Spending Score (1-100)
+sns.scatterplot(data = dataset, x = "Age", y = "Spending Score (1-100)", hue = "Gender")
+
+# Understanding the distribution of the column - Annual Income (k$)
+diagnostic_plots(dataset, 'Annual Income (k$)')
+
+# Scatterplot between Annual Income and Spending Score
+sns.scatterplot(data = dataset, x = "Annual Income (k$)", y = "Spending Score (1-100)", hue = "Gender")
+
+# Understanding the distribution of the column - Spending Score (1-100)
+diagnostic_plots(dataset, 'Spending Score (1-100)')
+
+def detect_outliers(df, n, features_list):
+    outlier_indices = []
+    for feature in features_list:
+        Q1 = np.percentile(df[feature], 25)
+        Q3 = np.percentile(df[feature], 75)
+        IQR = Q3 - Q1
+        outlier_step = 1.5 * IQR
+        outlier_list_col = df[(df[feature] < Q1 - outlier_step) | (df[feature] > Q3 + outlier_step)].index
+        outlier_indices.extend(outlier_list_col)
+    outlier_indices = Counter(outlier_indices)
+    multiple_outliers = list(key for key, value in outlier_indices.items() if value > n)
+    return multiple_outliers
+
+# Moved this line *after* the function definition so it gets executed
+outliers_to_drop = detect_outliers(dataset, 2, ['Age', 'Annual Income (k$)', 'Spending Score (1-100)'])
+print("We will drop these {} indices: ".format(len(outliers_to_drop)), outliers_to_drop)
+
+# Dropping the columns - CustomerId from the dataset
+
+dataset.drop(['CustomerID'], axis = 1, inplace = True)
+dataset
+
+# Filtering the age and spending score from the dataset
+
+X = dataset[['Age', 'Spending Score (1-100)']].iloc[:, :].values
+
+# Using the elbow method to find the optimal number of clusters
+
+wcss = []
+for i in range(1, 11):
+    kmeans = KMeans(n_clusters = i, init = 'k-means++', random_state = 42)
+    kmeans.fit(X)
+    wcss.append(kmeans.inertia_)
+plt.plot(range(1, 11), wcss, marker = 'o')
+plt.title('The Elbow Method')
+plt.xlabel('Number of clusters')
+plt.ylabel('WCSS')
+plt.show()
+
+# Training the K-Means model on the dataset
+kmeans = KMeans(n_clusters = 4, init = 'k-means++', random_state = 42)
+y_kmeans = kmeans.fit_predict(X)
+
+# Visualizing the clusters
+
+plt.figure(figsize = (7, 5))
+plt.scatter(X[y_kmeans == 0, 0], X[y_kmeans == 0, 1], s = 100, c = 'red', label = 'High Age - Medium Score')
+plt.scatter(X[y_kmeans == 1, 0], X[y_kmeans == 1, 1], s = 100, c = 'blue', label = 'Low Score customers')
+plt.scatter(X[y_kmeans == 2, 0], X[y_kmeans == 2, 1], s = 100, c = 'green', label = 'Low Age - High Score')
+plt.scatter(X[y_kmeans == 3, 0], X[y_kmeans == 3, 1], s = 100, c = 'cyan', label = 'Low Age - Medium Score')
+plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1], s = 300, c = 'yellow', label = 'Centroids')
+plt.title('Clusters of customers')
+plt.xlabel('Age')
+plt.ylabel('Spending Score (1 - 100)')
+plt.legend()
+plt.show()
+
+# Calculating the performance of the clusters
+
+silhouette_score_kmeans = round(silhouette_score(X, y_kmeans), 2)
+calinski_harabasz_score_kmeans = round(calinski_harabasz_score(X, y_kmeans), 2)
+print('Silhouette Score : {}'.format(silhouette_score_kmeans))
+print('Calinski Harabasz Score : {}'.format(calinski_harabasz_score_kmeans))
+
+# Filtering the age and spending score from the dataset
+X = dataset[['Age', 'Spending Score (1-100)']].iloc[:, :].values
+
+# Using the dendrogram to find the optimal number of clusters
+dendrogram = sch.dendrogram(sch.linkage(X, method = 'ward'))
+plt.title('Dendrogram')
+plt.xlabel('Customers')
+plt.ylabel('Euclidean distances')
+plt.show()
+
+# Training the Hierarchial clustering model on the dataset
+hc = AgglomerativeClustering(n_clusters = 2, affinity = 'euclidean', linkage = 'ward')
+y_hc = hc.fit_predict(X)
+
+# Visualizing the clusters
+plt.figure(figsize = (7, 5))
+plt.scatter(X[y_hc == 0, 0], X[y_hc == 0, 1], s = 100, c = 'red', label = 'Low Spending Score customers')
+plt.scatter(X[y_hc == 1, 0], X[y_hc == 1, 1], s = 100, c = 'blue', label = 'High Spending Score customers')
+plt.title('Clusters of customers')
+plt.xlabel('Age')
+plt.ylabel('Spending Score (1-100)')
+plt.legend()
+plt.show()
+
+# Calculating the performance of the clusters
+silhouette_score_hc = round(silhouette_score(X, y_hc), 2)
+calinski_harabasz_score_hc = round(calinski_harabasz_score(X, y_hc), 2)
+print('Silhouette Score : {}'.format(silhouette_score_hc))
+print('Calinski Harabasz Score : {}'.format(calinski_harabasz_score_hc))
+
+# Tabulating the results
+table = []
+print('Segmentation using Age and Spending Score')
+table.append(['S.No', 'Clustering Model', 'Silhouette Score', 'Calinski Harabasz Score'])
+table.append([1, 'K - Means clustering', silhouette_score_kmeans, calinski_harabasz_score_kmeans])
+table.append([2, 'Hierarchial clustering', silhouette_score_hc, calinski_harabasz_score_hc])
+print(tabulate(table, headers = 'firstrow', tablefmt = 'fancy_grid'))
+
+# Filtering the annual income and spending score from the dataset
+X = dataset[['Annual Income (k$)', 'Spending Score (1-100)']].iloc[:, :].values
+
+# Using the elbow method to find the optimal number of clusters
+wcss = []
+for i in range(1, 11):
+    kmeans = KMeans(n_clusters = i, init = 'k-means++', random_state = 42)
+    kmeans.fit(X)
+    wcss.append(kmeans.inertia_)
+plt.plot(range(1, 11), wcss, marker = 'o')
+plt.title('The Elbow Method')
+plt.xlabel('Number of clusters')
+plt.ylabel('WCSS')
+plt.show()
+
+# Training the K-Means model on the dataset
+kmeans = KMeans(n_clusters = 5, init = 'k-means++', random_state = 42)
+y_kmeans = kmeans.fit_predict(X)
+
+# Visualizing the clusters
+plt.figure(figsize = (10, 7))
+plt.scatter(X[y_kmeans == 0, 0], X[y_kmeans == 0, 1], s = 100, c = 'red', label = 'Medium Income - Medium Score')
+plt.scatter(X[y_kmeans == 1, 0], X[y_kmeans == 1, 1], s = 100, c = 'blue', label = 'High Income - Low Score')
+plt.scatter(X[y_kmeans == 2, 0], X[y_kmeans == 2, 1], s = 100, c = 'green', label = 'Low Income - Low Score')
+plt.scatter(X[y_kmeans == 3, 0], X[y_kmeans == 3, 1], s = 100, c = 'cyan', label = 'Low Income - High Score')
+plt.scatter(X[y_kmeans == 4, 0], X[y_kmeans == 4, 1], s = 100, c = 'magenta', label = 'High Income - High Score')
+plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1], s = 300, c = 'yellow', label = 'Centroids')
+plt.title('Clusters of customers')
+plt.xlabel('Annual Income (k$)')
+plt.ylabel('Spending Score (1 - 100)')
+plt.legend()
+plt.show()
+
+# Calculating the performance of the clusters
+silhouette_score_kmeans = round(silhouette_score(X, y_kmeans), 2)
+calinski_harabasz_score_kmeans = round(calinski_harabasz_score(X, y_kmeans), 2)
+print('Silhouette Score : {}'.format(silhouette_score_kmeans))
+print('Calinski Harabasz Score : {}'.format(calinski_harabasz_score_kmeans))
+
+# Filtering the annual income and spending score from the dataset
+X = dataset[['Annual Income (k$)', 'Spending Score (1-100)']].iloc[:, :].values
+
+# Using the dendrogram to find the optimal number of clusters
+dendrogram = sch.dendrogram(sch.linkage(X, method = 'ward'))
+plt.title('Dendrogram')
+plt.xlabel('Customers')
+plt.ylabel('Euclidean distances')
+plt.show()
+
+# Training the Hierarchial clustering model on the dataset
+hc = AgglomerativeClustering(n_clusters = 3, affinity = 'euclidean', linkage = 'ward')
+y_hc = hc.fit_predict(X)
+
+# Visualizing the clusters
+plt.figure(figsize = (10, 7))
+plt.scatter(X[y_hc == 0, 0], X[y_hc == 0, 1], s = 100, c = 'red', label = 'Low - Medium Income customers')
+plt.scatter(X[y_hc == 1, 0], X[y_hc == 1, 1], s = 100, c = 'blue', label = 'High Income - Low Score customers')
+plt.scatter(X[y_hc == 2, 0], X[y_hc == 2, 1], s = 100, c = 'green', label = 'High Income - High Score customers')
+plt.title('Clusters of customers')
+plt.xlabel('Annual Income (k$)')
+plt.ylabel('Spending Score (1-100)')
+plt.legend()
+plt.show()
+
+# Calculating the performance of the clusters
+silhouette_score_hc = round(silhouette_score(X, y_hc), 2)
+calinski_harabasz_score_hc = round(calinski_harabasz_score(X, y_hc), 2)
+print('Silhouette Score : {}'.format(silhouette_score_hc))
+print('Calinski Harabasz Score : {}'.format(calinski_harabasz_score_hc))
+
+# Tabulating the results
+table = []
+print('Segmentation using Annual Income and Spending Score')
+table.append(['S.No', 'Clustering Model', 'Silhouette Score', 'Calinski Harabasz Score'])
+table.append([1, 'K - Means clustering', silhouette_score_kmeans, calinski_harabasz_score_kmeans])
+table.append([2, 'Hierarchial clustering', silhouette_score_hc, calinski_harabasz_score_hc])
+print(tabulate(table, headers = 'firstrow', tablefmt = 'fancy_grid'))
+
+# Filtering the age, annual income and spending score from the dataset
+X = dataset[['Age', 'Annual Income (k$)', 'Spending Score (1-100)']].iloc[:, :].values
+
+### Using the elbow method to find the optimal number of clusters
+wcss = []
+for i in range(1, 11):
+    kmeans = KMeans(n_clusters = i, init = 'k-means++', random_state = 42)
+    kmeans.fit(X)
+    wcss.append(kmeans.inertia_)
+plt.plot(range(1, 11), wcss, marker = 'o')
+plt.title('The Elbow Method')
+plt.xlabel('Number of clusters')
+plt.ylabel('WCSS')
+plt.show()
+
+# Filtering the age, annual income and spending score from the dataset
+X = dataset[['Age', 'Annual Income (k$)', 'Spending Score (1-100)']].iloc[:, :].values
+
+### Using the elbow method to find the optimal number of clusters
+wcss = []
+for i in range(1, 11):
+    kmeans = KMeans(n_clusters = i, init = 'k-means++', random_state = 42)
+    kmeans.fit(X)
+    wcss.append(kmeans.inertia_)
+plt.plot(range(1, 11), wcss, marker = 'o')
+plt.title('The Elbow Method')
+plt.xlabel('Number of clusters')
+plt.ylabel('WCSS')
+plt.show()
+
+# Training the K-Means model on the dataset
+kmeans = KMeans(n_clusters = 6, init = 'k-means++', random_state = 42)
+y_kmeans = kmeans.fit_predict(X)
+
+# Visualizing the clusters
+fig = plt.figure(figsize = (10,10))
+ax = fig.add_subplot(111, projection = '3d')
+ax.scatter(X[y_kmeans == 0, 0], X[y_kmeans == 0, 1], X[y_kmeans == 0, 2], s = 40 , color = 'blue', label = "Cluster 0")
+ax.scatter(X[y_kmeans == 1, 0], X[y_kmeans == 1, 1], X[y_kmeans == 1, 2], s = 40 , color = 'orange', label = "Cluster 1")
+ax.scatter(X[y_kmeans == 2, 0], X[y_kmeans == 2, 1], X[y_kmeans == 2, 2], s = 40 , color = 'green', label = "Cluster 2")
+ax.scatter(X[y_kmeans == 3, 0], X[y_kmeans == 3, 1], X[y_kmeans == 3, 2], s = 40 , color = 'magenta', label = "Cluster 3")
+ax.scatter(X[y_kmeans == 4, 0], X[y_kmeans == 4, 1], X[y_kmeans == 4, 2], s = 40 , color = 'purple', label = "Cluster 4")
+ax.scatter(X[y_kmeans == 5, 0], X[y_kmeans == 5, 1], X[y_kmeans == 5, 2], s = 40 , color = 'red', label = "Cluster 5")
+ax.set_xlabel('Age')
+ax.set_ylabel('Anual Income (k$)')
+ax.set_zlabel('Spending Score (1-100)')
+ax.legend()
+plt.show()
+
+# Calculating the performance of the clusters
+silhouette_score_kmeans = round(silhouette_score(X, y_kmeans), 2)
+calinski_harabasz_score_kmeans = round(calinski_harabasz_score(X, y_kmeans), 2)
+print('Silhouette Score : {}'.format(silhouette_score_kmeans))
+print('Calinski Harabasz Score : {}'.format(calinski_harabasz_score_kmeans))
+
+# Filtering the age, annual income and spending score from the dataset
+X = dataset[['Age', 'Annual Income (k$)', 'Spending Score (1-100)']].iloc[:, :].values
+
+# Using the dendrogram to find the optimal number of clusters
+dendrogram = sch.dendrogram(sch.linkage(X, method = 'ward'))
+plt.title('Dendrogram')
+plt.xlabel('Customers')
+plt.ylabel('Euclidean distances')
+plt.show()
+
+# Training the Hierarchial clustering model on the dataset
+hc = AgglomerativeClustering(n_clusters = 3, affinity = 'euclidean', linkage = 'ward')
+y_hc = hc.fit_predict(X)
+
+# Visualizing the clusters
+fig = plt.figure(figsize = (10,10))
+ax = fig.add_subplot(111, projection = '3d')
+ax.scatter(X[y_hc == 0, 0], X[y_hc == 0, 1], X[y_hc == 0, 2], s = 40 , color = 'blue', label = "Cluster 0")
+ax.scatter(X[y_hc == 1, 0], X[y_hc == 1, 1], X[y_hc == 1, 2], s = 40 , color = 'orange', label = "Cluster 1")
+ax.scatter(X[y_hc == 2, 0], X[y_hc == 2, 1], X[y_hc == 2, 2], s = 40 , color = 'green', label = "Cluster 2")
+ax.set_xlabel('Age')
+ax.set_ylabel('Anual Income (k$)')
+ax.set_zlabel('Spending Score (1-100)')
+ax.legend()
+plt.show()
+
+# Calculating the performance of the clusters
+
+silhouette_score_hc = round(silhouette_score(X, y_hc), 2)
+calinski_harabasz_score_hc = round(calinski_harabasz_score(X, y_hc), 2)
+print('Silhouette Score : {}'.format(silhouette_score_hc))
+print('Calinski Harabasz Score : {}'.format(calinski_harabasz_score_hc))
+
+# Tabulating the results
+
+table = []
+print('Segmentation using Age, Annual Income, and Spending Score')
+table.append(['S.No', 'Clustering Model', 'Silhouette Score', 'Calinski Harabasz Score'])
+table.append([1, 'K - Means clustering', silhouette_score_kmeans, calinski_harabasz_score_kmeans])
+table.append([2, 'Hierarchial clustering', silhouette_score_hc, calinski_harabasz_score_hc])
+print(tabulate(table, headers = 'firstrow', tablefmt = 'fancy_grid'))
